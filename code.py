@@ -3,14 +3,14 @@
 # SPDX-License-Identifier: MIT
 
 """
-GOOGLY EYES for Adafruit EyeLight LED glasses + driver. Pendulum physics
-simulation using accelerometer and math. This uses only the rings, not the
-matrix portion. Adapted from Bill Earl's STEAM-Punk Goggles project:
-https://learn.adafruit.com/steam-punk-goggles
+This version started out as GOOGLY EYES for Adafruit EyeLight LED glasses + driver. Pendulum physics
+That was Adapted from Bill Earl's STEAM-Punk Goggles project: https://learn.adafruit.com/steam-punk-goggles
 """
 
 import math
 import random
+import time
+
 import board
 import supervisor
 import adafruit_lis3dh
@@ -91,6 +91,27 @@ pendulums = [
 ]
 
 
+def make_color(r, g, b, scale=1):
+    return (int(r * scale) << 16 | int(g * scale) << 8 | int(b * scale))
+
+def outside_loop(state, glasses):
+    pixel = state["pixel"]
+    ring = state["ring"]
+    last_pixel = pixel - 1
+    if last_pixel == -1:
+        last_pixel = 23
+    ring[last_pixel] = make_color(0, 0, 0)
+
+    if ring == glasses.left_ring and pixel == 5:
+        ring = glasses.right_ring
+        pixel = 19
+    elif ring == glasses.right_ring and pixel == 5:
+        ring = glasses.left_ring
+        pixel = 6
+    state["ring"] = ring
+    state["pixel"] = pixel + 1
+    ring[pixel] = make_color(random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+
 # MAIN LOOP ---------
 
 while True:
@@ -103,10 +124,26 @@ while True:
     try:
 
         accel = lis3dh.acceleration
-        for p in pendulums:
-            p.iterate(accel)
+        things = [(100, outside_loop)]
+        last_run = [round(time.time() * 1000)]
+        thing_state = [{
+            "pixel": 0,
+            "scale": 0.1,
+            "ring": glasses.left_ring,
+            "direction": 1
+        }]
 
-        glasses.show()
+        last_run[0] = round(time.time() * 1000)
+        while True:
+            for (freq, operation) in things:
+                delta = round(time.time() * 1000) - last_run[0];
+                if delta > freq:
+                    last_run[0] = round(time.time() * 1000)
+                    operation(thing_state[0], glasses)
+
+            glasses.show();
+            time.sleep(0.2);
+
 
     # See "try" notes above regarding rare I2C errors.
     except OSError:
