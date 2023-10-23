@@ -94,6 +94,10 @@ pendulums = [
 def make_color(r, g, b, scale=1):
     return (int(r * scale) << 16 | int(g * scale) << 8 | int(b * scale))
 
+def store_color(r, g, b):
+    rv = (r, g, b)
+    return rv
+
 def move_pixel(pixel, direction):
     pixel = pixel + direction
     if pixel < 0:
@@ -101,6 +105,45 @@ def move_pixel(pixel, direction):
     if pixel > 23:
         pixel = 0
     return pixel
+
+class Trail:
+    def __init__(self, length):
+        self.path = []
+        self.pixel = 6
+        self.ring = glasses.left_ring
+        self.direction = 1
+        self.length = length
+
+    def step(self):
+        # Walk the tail adjusting
+        index = 0
+        while index < len(self.path):
+            ring, pixel, color = self.path[index]
+            new_color = store_color(int(color[0]/3), int(color[1]/3), int(color[2]/3))
+            ring[pixel] = make_color(*new_color)
+            self.path[index] = (ring, pixel, new_color)
+            index += 1
+
+        if len(self.path) > self.length:
+            ring, pixel, _ = self.path.pop()
+            ring[pixel] = make_color(0, 0, 0)
+
+        # Adjust for this state
+        if self.ring == glasses.left_ring and self.pixel == 5:
+            self.ring = glasses.right_ring
+            self.pixel = 18 
+            self.direction = -1
+        elif self.ring == glasses.right_ring and self.pixel == 19:
+            self.ring = glasses.left_ring
+            self.pixel = 6
+            self.direction = 1
+        else:
+            self.pixel = move_pixel(self.pixel, self.direction)
+
+        color = store_color(0, 255, 0)
+        self.ring[self.pixel] = make_color(*color)
+        self.path.insert(0, (self.ring, self.pixel, color))
+
 
 def outside_loop(state, glasses):
     # Remove the old one
@@ -128,8 +171,6 @@ def outside_loop(state, glasses):
     state["pixel"] = pixel
     state["direction"] = direction
 
-# MAIN LOOP ---------
-
 while True:
 
     # The try/except here is because VERY INFREQUENTLY the I2C bus will
@@ -137,17 +178,11 @@ while True:
     # LED driver, whether from bumping around the wires or sometimes an
     # I2C device just gets wedged. To more robustly handle the latter,
     # the code will restart if that happens.
+    trail = Trail(4)
     try:
-
         accel = lis3dh.acceleration
-        things = [(50, outside_loop)]
+        things = [(100, trail.step)]
         last_run = [0]
-        thing_state = [{
-            "pixel": 0,
-            "scale": 0.1,
-            "ring": glasses.left_ring,
-            "direction": 1
-        }]
 
         last_run[0] = supervisor.ticks_ms()
         while True:
@@ -155,11 +190,8 @@ while True:
                 delta = supervisor.ticks_ms() - last_run[0];
                 if delta > freq:
                     last_run[0] = supervisor.ticks_ms()
-                    operation(thing_state[0], glasses)
-                    glasses.show();
-
-            # time.sleep(0.05);
-
+                    operation()
+                    glasses.show()
 
     # See "try" notes above regarding rare I2C errors.
     except OSError:
