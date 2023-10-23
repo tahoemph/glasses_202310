@@ -94,23 +94,39 @@ pendulums = [
 def make_color(r, g, b, scale=1):
     return (int(r * scale) << 16 | int(g * scale) << 8 | int(b * scale))
 
+def move_pixel(pixel, direction):
+    pixel = pixel + direction
+    if pixel < 0:
+        pixel = 23
+    if pixel > 23:
+        pixel = 0
+    return pixel
+
 def outside_loop(state, glasses):
+    # Remove the old one
     pixel = state["pixel"]
     ring = state["ring"]
-    last_pixel = pixel - 1
-    if last_pixel == -1:
-        last_pixel = 23
-    ring[last_pixel] = make_color(0, 0, 0)
+    direction = state["direction"]
+    ring[pixel] = make_color(0, 0, 0)
 
+    # Adjust for this state
     if ring == glasses.left_ring and pixel == 5:
         ring = glasses.right_ring
-        pixel = 19
-    elif ring == glasses.right_ring and pixel == 5:
+        pixel = 18 
+        direction = -1
+    elif ring == glasses.right_ring and pixel == 19:
         ring = glasses.left_ring
         pixel = 6
+        direction = 1
+    else:
+        pixel = move_pixel(pixel, direction)
+
+    ring[pixel] = make_color(0, 255, 0)
+
+    # update state
     state["ring"] = ring
-    state["pixel"] = pixel + 1
-    ring[pixel] = make_color(random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+    state["pixel"] = pixel
+    state["direction"] = direction
 
 # MAIN LOOP ---------
 
@@ -124,8 +140,8 @@ while True:
     try:
 
         accel = lis3dh.acceleration
-        things = [(100, outside_loop)]
-        last_run = [round(time.time() * 1000)]
+        things = [(50, outside_loop)]
+        last_run = [0]
         thing_state = [{
             "pixel": 0,
             "scale": 0.1,
@@ -133,16 +149,16 @@ while True:
             "direction": 1
         }]
 
-        last_run[0] = round(time.time() * 1000)
+        last_run[0] = supervisor.ticks_ms()
         while True:
             for (freq, operation) in things:
-                delta = round(time.time() * 1000) - last_run[0];
+                delta = supervisor.ticks_ms() - last_run[0];
                 if delta > freq:
-                    last_run[0] = round(time.time() * 1000)
+                    last_run[0] = supervisor.ticks_ms()
                     operation(thing_state[0], glasses)
+                    glasses.show();
 
-            glasses.show();
-            time.sleep(0.2);
+            # time.sleep(0.05);
 
 
     # See "try" notes above regarding rare I2C errors.
