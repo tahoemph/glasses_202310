@@ -145,32 +145,6 @@ class Trail:
         self.path.insert(0, (self.ring, self.pixel, color))
 
 
-def outside_loop(state, glasses):
-    # Remove the old one
-    pixel = state["pixel"]
-    ring = state["ring"]
-    direction = state["direction"]
-    ring[pixel] = make_color(0, 0, 0)
-
-    # Adjust for this state
-    if ring == glasses.left_ring and pixel == 5:
-        ring = glasses.right_ring
-        pixel = 18 
-        direction = -1
-    elif ring == glasses.right_ring and pixel == 19:
-        ring = glasses.left_ring
-        pixel = 6
-        direction = 1
-    else:
-        pixel = move_pixel(pixel, direction)
-
-    ring[pixel] = make_color(0, 255, 0)
-
-    # update state
-    state["ring"] = ring
-    state["pixel"] = pixel
-    state["direction"] = direction
-
 while True:
 
     # The try/except here is because VERY INFREQUENTLY the I2C bus will
