@@ -1,3 +1,4 @@
+# pyright: reportShadowImports=false
 # SPDX-FileCopyrightText: 2021 Phil Burgess for Adafruit Industries
 #
 # SPDX-License-Identifier: MIT
