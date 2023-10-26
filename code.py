@@ -27,8 +27,21 @@ i2c = board.I2C()  # uses board.SCL and board.SDA
 lis3dh = adafruit_lis3dh.LIS3DH_I2C(i2c)
 
 # Initialize the IS31 LED driver, buffered for smoother animation
-glasses = LED_Glasses(i2c, allocate=adafruit_is31fl3741.MUST_BUFFER)
+# glasses = LED_Glasses(i2c, allocate=adafruit_is31fl3741.MUST_BUFFER)
 # matrix = Adafruit_RGBMatrixQT(i2c, allocate=adafruit_is31fl3741.MUST_BUFFER)
+
+class Glasses:
+    def __init__(self, i2c):
+        self.glasses = LED_Glasses(i2c, allocate=adafruit_is31fl3741.MUST_BUFFER)
+
+    def left_ring(self):
+        return self.glasses.left_ring
+
+    def right_ring(self):
+        return self.glasses.right_ring
+
+    def show(self):
+        self.glasses.show()
 
 def make_color(r, g, b, scale=1):
     return (int(r * scale) << 16 | int(g * scale) << 8 | int(b * scale))
@@ -46,10 +59,11 @@ def move_pixel(pixel, direction):
     return pixel
 
 class Trail:
-    def __init__(self, length):
+    def __init__(self, glasses, length):
         self.path = []
-        self.pixel = 6
-        self.ring = glasses.left_ring
+        self.pixel = 5
+        self.glasses = glasses
+        self.ring = self.glasses.left_ring()
         self.direction = 1
         self.length = length
 
@@ -68,12 +82,12 @@ class Trail:
             ring[pixel] = make_color(0, 0, 0)
 
         # Adjust for this state
-        if self.ring == glasses.left_ring and self.pixel == 5:
-            self.ring = glasses.right_ring
+        if self.ring == self.glasses.left_ring() and self.pixel == 5:
+            self.ring = self.glasses.right_ring()
             self.pixel = 18 
             self.direction = -1
-        elif self.ring == glasses.right_ring and self.pixel == 19:
-            self.ring = glasses.left_ring
+        elif self.ring == self.glasses.right_ring() and self.pixel == 19:
+            self.ring = self.glasses.left_ring()
             self.pixel = 6
             self.direction = 1
         else:
@@ -98,7 +112,8 @@ while True:
     # LED driver, whether from bumping around the wires or sometimes an
     # I2C device just gets wedged. To more robustly handle the latter,
     # the code will restart if that happens.
-    trail = Trail(4)
+    glasses = Glasses(i2c)
+    trail = Trail(glasses, 4)
     # explosion = Explosion()
     try:
         accel = lis3dh.acceleration
