@@ -8,10 +8,11 @@ That was Adapted from Bill Earl's STEAM-Punk Goggles project: https://learn.adaf
 """
 import math
 import random
-import time
+from random import randint
 
 import board
 import supervisor
+
 import adafruit_lis3dh
 import adafruit_is31fl3741
 from adafruit_is31fl3741.adafruit_ledglasses import LED_Glasses
@@ -24,7 +25,7 @@ i2c = board.I2C()  # uses board.SCL and board.SDA
 # i2c = board.STEMMA_I2C()  # For using the built-in STEMMA QT connector on a microcontroller
 
 # Initialize the accelerometer
-lis3dh = adafruit_lis3dh.LIS3DH_I2C(i2c)
+# lis3dh = adafruit_lis3dh.LIS3DH_I2C(i2c)
 
 # Initialize the IS31 LED driver, buffered for smoother animation
 # glasses = LED_Glasses(i2c, allocate=adafruit_is31fl3741.MUST_BUFFER)
@@ -98,12 +99,27 @@ class Trail:
         self.path.insert(0, (self.ring, self.pixel, color))
 
 class Explosion:
-    def __init__(self):
-        self.foo = 1
+    def __init__(self, glasses):
+        self.glasses = glasses
+        self.rings = [self.glasses.left_ring(), self.glasses.right_ring()]
+        self.last = []
+        self.last_ring = None
 
     def display(self):
-        for pixel in range(10):
-            matrix.pixel(5, pixel, make_color(2555, 0, 0))
+        ring = self.rings[randint(0, 1)]
+        self.last = [make_color(randint(0, 255), randint(0, 255), randint(0, 255)) for _index in range(0, 24)]
+        self.last_ring = ring
+        for index, color in enumerate(self.last):
+            ring[index] = color
+
+    def clear(self):
+        if self.last_ring == None or len(self.last) == 0:
+            return
+        for index in range(0, 24):
+            if self.last_ring[index] == self.last[index]:
+                self.last_ring[index]= make_color(0, 0, 0)
+        self_last_ring = []
+        self.last = None
 
 while True:
 
@@ -114,19 +130,28 @@ while True:
     # the code will restart if that happens.
     glasses = Glasses(i2c)
     trail = Trail(glasses, 4)
-    # explosion = Explosion()
+    explosion = Explosion(glasses)
     try:
-        accel = lis3dh.acceleration
-        # things = [(100, trail.step), (1000, explosion.display)]
-        things = [(100, trail.step)]
-        last_run = [supervisor.ticks_ms()] * len(things)
+        things = [(100, trail.step, None), (1000, explosion.display, explosion.clear)]
+        last_run = [{"last_run_time": supervisor.ticks_ms(), "last_run": False}, {"last_run_time": supervisor.ticks_ms(), "last_run": False}]
         while True:
-            for index, (freq, operation) in enumerate(things):
-                delta = supervisor.ticks_ms() - last_run[index];
+            loop_start = supervisor.ticks_ms()
+            changed = False
+            for index, (freq, operation, repaint) in enumerate(things):
+                if last_run[index]["last_run"] and repaint != None:
+                    changed = True
+                    last_run[index]["last_run"] = False
+                    repaint()
+
+                delta = loop_start - last_run[index]["last_run_time"];
                 if delta > freq:
-                    last_run[index] = supervisor.ticks_ms()
+                    last_run[index]["last_run_time"] = loop_start
+                    last_run[index]["last_run"] = True
+                    changed = True
                     operation()
-                    glasses.show()
+
+            if changed:
+                glasses.show()
 
     # See "try" notes above regarding rare I2C errors.
     except OSError:
