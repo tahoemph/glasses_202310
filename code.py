@@ -1,4 +1,4 @@
-# pyright: reportShadowImports=false
+# pyright: reportShadowedImports=false
 # SPDX-FileCopyrightText: 2021 Phil Burgess for Adafruit Industries
 #
 # SPDX-License-Identifier: MIT
@@ -32,7 +32,18 @@ i2c = board.I2C()  # uses board.SCL and board.SDA
 # glasses = LED_Glasses(i2c, allocate=adafruit_is31fl3741.MUST_BUFFER)
 # matrix = Adafruit_RGBMatrixQT(i2c, allocate=adafruit_is31fl3741.MUST_BUFFER)
 
+# ABC but no support for that in CircuitPython
 class Glasses:
+    def __init__(self, i2c):
+        raise NotImplementedError
+    def left_ring(self):
+        raise NotImplementedError
+    def right_ring(self):
+        raise NotImplementedError
+    def show(self):
+        raise NotImplementedError
+
+class GlassesRing(Glasses):
     def __init__(self, i2c):
         self.glasses = LED_Glasses(i2c, allocate=adafruit_is31fl3741.MUST_BUFFER)
 
@@ -129,7 +140,7 @@ while True:
     # LED driver, whether from bumping around the wires or sometimes an
     # I2C device just gets wedged. To more robustly handle the latter,
     # the code will restart if that happens.
-    glasses = Glasses(i2c)
+    glasses = GlassesRing(i2c)
     trail = Trail(glasses, 4)
     explosion = Explosion(glasses)
     try:
