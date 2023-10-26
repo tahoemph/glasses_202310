@@ -15,6 +15,7 @@ import supervisor
 import adafruit_lis3dh
 import adafruit_is31fl3741
 from adafruit_is31fl3741.adafruit_ledglasses import LED_Glasses
+from adafruit_is31fl3741.adafruit_rgbmatrixqt import Adafruit_RGBMatrixQT
 
 # HARDWARE SETUP ----
 
@@ -27,6 +28,7 @@ lis3dh = adafruit_lis3dh.LIS3DH_I2C(i2c)
 
 # Initialize the IS31 LED driver, buffered for smoother animation
 glasses = LED_Glasses(i2c, allocate=adafruit_is31fl3741.MUST_BUFFER)
+# matrix = Adafruit_RGBMatrixQT(i2c, allocate=adafruit_is31fl3741.MUST_BUFFER)
 
 def make_color(r, g, b, scale=1):
     return (int(r * scale) << 16 | int(g * scale) << 8 | int(b * scale))
@@ -81,6 +83,13 @@ class Trail:
         self.ring[self.pixel] = make_color(*color)
         self.path.insert(0, (self.ring, self.pixel, color))
 
+class Explosion:
+    def __init__(self):
+        self.foo = 1
+
+    def display(self):
+        for pixel in range(10):
+            matrix.pixel(5, pixel, make_color(2555, 0, 0))
 
 while True:
 
@@ -90,17 +99,17 @@ while True:
     # I2C device just gets wedged. To more robustly handle the latter,
     # the code will restart if that happens.
     trail = Trail(4)
+    # explosion = Explosion()
     try:
         accel = lis3dh.acceleration
+        # things = [(100, trail.step), (1000, explosion.display)]
         things = [(100, trail.step)]
-        last_run = [0]
-
-        last_run[0] = supervisor.ticks_ms()
+        last_run = [supervisor.ticks_ms()] * len(things)
         while True:
-            for (freq, operation) in things:
-                delta = supervisor.ticks_ms() - last_run[0];
+            for index, (freq, operation) in enumerate(things):
+                delta = supervisor.ticks_ms() - last_run[index];
                 if delta > freq:
-                    last_run[0] = supervisor.ticks_ms()
+                    last_run[index] = supervisor.ticks_ms()
                     operation()
                     glasses.show()
 
