@@ -10,8 +10,10 @@ That was Adapted from Bill Earl's STEAM-Punk Goggles project: https://learn.adaf
 import math
 import random
 from random import randint
+import time
 
 import board
+import busio
 import supervisor
 
 import adafruit_lis3dh
@@ -22,7 +24,7 @@ from adafruit_is31fl3741.adafruit_rgbmatrixqt import Adafruit_RGBMatrixQT
 # HARDWARE SETUP ----
 
 # Shared by both the accelerometer and LED controller
-i2c = board.I2C()  # uses board.SCL and board.SDA
+i2c = busio.I2C(board.SCL, board.SDA, frequency=1_000_000)  # uses board.SCL and board.SDA
 # i2c = board.STEMMA_I2C()  # For using the built-in STEMMA QT connector on a microcontroller
 
 # Initialize the accelerometer
@@ -55,6 +57,42 @@ class GlassesRing(Glasses):
 
     def show(self):
         self.glasses.show()
+
+class GlassesMatrix(Glasses):
+    def __init__(self, i2c):
+        self.is31 = adafruit_is31fl3741.IS31FL3741(i2c)
+        self.is31.set_led_scaling(0xFF)
+        self.is31.global_current = 0xFF
+        self.is31.enbable = True
+        for pixel in range(351):
+            self.is31[pixel] = 255
+            time.sleep(0.1)
+            self.is31[pixel] = 0
+            print(f'{pixel}')
+        time.sleep(10)
+        self.display = Adafruit_RGBMatrixQT(i2c)
+        self.display.set_led_scaling(0xFF)
+        self.display.global_current = 0xFF
+        self.display.enable = True
+        for y in range(9):
+            for x in range(13):
+                self.display.pixel(x, y, make_color(0, 0, 0))
+        for y in range(9):
+            for x in range(13):
+                print(f'{x} {y}')
+                self.display.pixel(x, y, make_color(0, 255, 0))
+                time.sleep(1)
+
+    def left_ring(self):
+        # return self.glasses.left_ring
+        pass
+
+    def right_ring(self):
+        # return self.glasses.right_ring
+        pass
+
+    def show(self):
+        self.display.show()
 
 def make_color(r, g, b, scale=1):
     return (int(r * scale) << 16 | int(g * scale) << 8 | int(b * scale))
@@ -140,7 +178,7 @@ while True:
     # LED driver, whether from bumping around the wires or sometimes an
     # I2C device just gets wedged. To more robustly handle the latter,
     # the code will restart if that happens.
-    glasses = GlassesRing(i2c)
+    glasses = GlassesMatrix(i2c)
     trail = Trail(glasses, 4)
     explosion = Explosion(glasses)
     try:
