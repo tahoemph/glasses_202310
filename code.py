@@ -30,72 +30,11 @@ i2c = busio.I2C(board.SCL, board.SDA, frequency=1_000_000)  # uses board.SCL and
 # Initialize the accelerometer
 # lis3dh = adafruit_lis3dh.LIS3DH_I2C(i2c)
 
-# Initialize the IS31 LED driver, buffered for smoother animation
-# glasses = LED_Glasses(i2c, allocate=adafruit_is31fl3741.MUST_BUFFER)
-# matrix = Adafruit_RGBMatrixQT(i2c, allocate=adafruit_is31fl3741.MUST_BUFFER)
-
-# ABC but no support for that in CircuitPython
-class Glasses:
-    def __init__(self, i2c):
-        raise NotImplementedError
-    def left_ring(self):
-        raise NotImplementedError
-    def right_ring(self):
-        raise NotImplementedError
-    def show(self):
-        raise NotImplementedError
-
-class GlassesRing(Glasses):
-    def __init__(self, i2c):
-        self.glasses = LED_Glasses(i2c, allocate=adafruit_is31fl3741.MUST_BUFFER)
-
-    def left_ring(self):
-        return self.glasses.left_ring
-
-    def right_ring(self):
-        return self.glasses.right_ring
-
-    def show(self):
-        self.glasses.show()
-
-class GlassesMatrix(Glasses):
-    def __init__(self, i2c):
-        self.is31 = adafruit_is31fl3741.IS31FL3741(i2c)
-        self.is31.set_led_scaling(0xFF)
-        self.is31.global_current = 0xFF
-        self.is31.enbable = True
-        for pixel in range(351):
-            self.is31[pixel] = 255
-            time.sleep(0.1)
-            self.is31[pixel] = 0
-            print(f'{pixel}')
-        time.sleep(10)
-        self.display = Adafruit_RGBMatrixQT(i2c)
-        self.display.set_led_scaling(0xFF)
-        self.display.global_current = 0xFF
-        self.display.enable = True
-        for y in range(9):
-            for x in range(13):
-                self.display.pixel(x, y, make_color(0, 0, 0))
-        for y in range(9):
-            for x in range(13):
-                print(f'{x} {y}')
-                self.display.pixel(x, y, make_color(0, 255, 0))
-                time.sleep(1)
-
-    def left_ring(self):
-        # return self.glasses.left_ring
-        pass
-
-    def right_ring(self):
-        # return self.glasses.right_ring
-        pass
-
-    def show(self):
-        self.display.show()
-
 def make_color(r, g, b, scale=1):
     return (int(r * scale) << 16 | int(g * scale) << 8 | int(b * scale))
+
+def unmake_color(color):
+    return ((color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF)
 
 def store_color(r, g, b):
     rv = (r, g, b)
@@ -109,6 +48,29 @@ def move_pixel(pixel, direction):
         pixel = 0
     return pixel
 
+def masomenos():
+    while True:
+        val = randint(-1, 1)
+        if val != 0:
+            return val
+
+class GlassesRing:
+    def __init__(self, i2c):
+        self.glasses = LED_Glasses(i2c, allocate=adafruit_is31fl3741.MUST_BUFFER)
+        self.glasses.show() # clear it up
+
+    def left_ring(self):
+        return self.glasses.left_ring
+
+    def right_ring(self):
+        return self.glasses.right_ring
+
+    def pixel(self, x, y, color):
+        self.glasses.pixel(x, y, color)
+
+    def show(self):
+        self.glasses.show()
+
 class Trail:
     def __init__(self, glasses, length):
         self.path = []
@@ -117,6 +79,13 @@ class Trail:
         self.ring = self.glasses.left_ring()
         self.direction = 1
         self.length = length
+        self.last_run = supervisor.ticks_ms()
+
+    def tick(self):
+        now = supervisor.ticks_ms()
+        if now - self.last_run >= 100:
+            self.step()
+            self.last_run = now
 
     def step(self):
         # Walk the tail adjusting
@@ -144,32 +113,139 @@ class Trail:
         else:
             self.pixel = move_pixel(self.pixel, self.direction)
 
-        color = store_color(0, 255, 0)
+        if self.ring == self.glasses.left_ring():
+            color = store_color(255, 0, 0)
+        else:
+            color = store_color(0, 255, 0)
         self.ring[self.pixel] = make_color(*color)
         self.path.insert(0, (self.ring, self.pixel, color))
 
-class Explosion:
+class Pixel:
+    def __init__(self, x, y, color, direction = 1):
+        self.x = x
+        self.y = y
+        self.color = color
+        self.direction = direction
+
+class Runner:
     def __init__(self, glasses):
         self.glasses = glasses
-        self.rings = [self.glasses.left_ring(), self.glasses.right_ring()]
-        self.last = []
-        self.last_ring = None
+        self.pixels = None
+        self.last_pixels = None
+        self.last_run = supervisor.ticks_ms()
+        self._reset = False
 
-    def display(self):
-        ring = self.rings[randint(0, 1)]
-        self.last = [make_color(randint(0, 255), randint(0, 255), randint(0, 255)) for _index in range(0, 24)]
-        self.last_ring = ring
-        for index, color in enumerate(self.last):
-            ring[index] = color
+    def tick(self):
+        now = supervisor.ticks_ms()
+        if now - self.last_run >= 1000:
+            if self.pixels == None or len(self.pixels) == 0:
+                self.reset()
+            self.step()
+            self.last_run = now
+
+    def reset(self):
+        if self._reset:
+            return
+        self._reset = True
+        self.pixels = []
+        self.pixels.append(Pixel(8, 3, make_color(0, 255, 0), -1))
+        self.pixels.append(Pixel(9, 3, make_color(0, 255, 0), 1))
+
+    def no_match(self, p, pixels):
+        for pixel in pixels:
+            if p == pixel:
+                continue
+            if p.x == pixel.x and p.y == pixel.y and p.direction == pixel.direction:
+                return False
+        return True
+
+    def step(self):
+        if self.pixels == None or len(self.pixels) == 0:
+            return
+        if self.last_pixels is not None:
+            for pixel in self.last_pixels:
+                self.glasses.pixel(pixel.x, pixel.y, make_color(0, 0, 0))
+        self.last_pixels = [Pixel(x.x, x.y, x.color, x.direction) for x in self.pixels]
+        for pixel in self.pixels:
+            self.glasses.pixel(pixel.x, pixel.y, pixel.color)
+            pixel.x += pixel.direction
+            pixel.y = pixel.y + randint(-1, 1)
+            if pixel.y < 0:
+                pixel.y = 0
+            if pixel.y > 4:
+                pixel.y = 4
+        new_pixels = []
+        for pixel in self.pixels:
+            new_pixels.append(Pixel(pixel.x, pixel.y + masomenos(), self.next_color(pixel.color), pixel.direction))
+        self.pixels = self.pixels + new_pixels
+        self.pixels = [p for p in self.pixels if (p.x > 0 and p.x < 17) and (p.y >= 0 and p.y <= 4)]
+        self.pixels = [p for p in self.pixels if self.no_match(p, self.pixels)]
+
+    def next_color(self, color):
+        components = unmake_color(color)
+        new_color = [components[0] + randint(0, 1) * 25, components[1] + randint(-1, 0) * 25, components[2] + masomenos() * 2]
+        new_color = [min(max(comp, 0), 255) for comp in new_color]
+        print(f'2{components} {new_color}')
+        return make_color(*new_color)
 
     def clear(self):
-        if self.last_ring == None or len(self.last) == 0:
+        pass
+
+class Explosion:
+    def __init__(self, glasses, x, y, color, direction):
+        self.glasses = glasses
+        self.pixels = None
+        self.last_pixels = None
+        self.last_run = supervisor.ticks_ms()
+        self.start_x = x
+        self.start_y = y
+        self.start_color = color
+        self.start_direction = direction
+
+    def tick(self):
+        now = supervisor.ticks_ms()
+        if now - self.last_run >= 100:
+            if self.pixels == None or len(self.pixels) == 0:
+                print("reset")
+                self.reset()
+            self.step()
+            self.last_run = now
+
+    def reset(self):
+        x = self.start_x
+        y = self.start_y
+        color = self.start_color
+        direction = self.start_direction
+        self.pixels = [
+                Pixel(x, y, color, direction),
+                Pixel(x - 1, y, color, direction),
+                Pixel(x + 1, y, color, direction),
+                Pixel(x, y + 1, color, direction),
+                Pixel(x, y - 1, color, direction)
+        ]
+
+    def no_match(self, p, pixels):
+        for pixel in pixels:
+            if p == pixel:
+                continue
+            if p.x == pixel.x and p.y == pixel.y and p.direction == pixel.direction:
+                return False
+        return True
+
+    def step(self):
+        if self.pixels == None or len(self.pixels) == 0:
             return
-        for index in range(0, 24):
-            if self.last_ring[index] == self.last[index]:
-                self.last_ring[index]= make_color(0, 0, 0)
-        self_last_ring = []
-        self.last = None
+        if self.last_pixels is not None:
+            for pixel in self.last_pixels:
+                self.glasses.pixel(pixel.x, pixel.y, make_color(0, 0, 0))
+        self.last_pixels = [Pixel(x.x, x.y, x.color, x.direction) for x in self.pixels]
+        for pixel in self.pixels:
+            self.glasses.pixel(pixel.x, pixel.y, pixel.color)
+            pixel.x += pixel.direction
+        self.pixels = [p for p in self.pixels if (p.x > 0 and p.x < 17) and (p.y >= 0 and p.y <= 4)]
+
+    def clear(self):
+        pass
 
 while True:
 
@@ -178,30 +254,22 @@ while True:
     # LED driver, whether from bumping around the wires or sometimes an
     # I2C device just gets wedged. To more robustly handle the latter,
     # the code will restart if that happens.
-    glasses = GlassesMatrix(i2c)
+    glasses = GlassesRing(i2c)
     trail = Trail(glasses, 4)
-    explosion = Explosion(glasses)
+    explosion_l = Explosion(glasses, 5, 3, make_color(0, 255, 0), -1)
+    explosion_r = Explosion(glasses, 12, 3, make_color(255, 0, 0), 1)
+    last_run = supervisor.ticks_ms()
     try:
-        things = [(100, trail.step, None), (1000, explosion.display, explosion.clear)]
-        last_run = [{"last_run_time": supervisor.ticks_ms(), "last_run": False}, {"last_run_time": supervisor.ticks_ms(), "last_run": False}]
+        # frequency to call setup, frequency to call step, clear to call inbetween
+        # the operation returns True when it is done
+        things = (trail.tick, explosion_r.tick, explosion_l.tick)
         while True:
-            loop_start = supervisor.ticks_ms()
-            changed = False
-            for index, (freq, operation, repaint) in enumerate(things):
-                if last_run[index]["last_run"] and repaint != None:
-                    changed = True
-                    last_run[index]["last_run"] = False
-                    repaint()
-
-                delta = loop_start - last_run[index]["last_run_time"];
-                if delta > freq:
-                    last_run[index]["last_run_time"] = loop_start
-                    last_run[index]["last_run"] = True
-                    changed = True
-                    operation()
-
-            if changed:
+            now = supervisor.ticks_ms()
+            if now - last_run >= 10:
+                for op in things:
+                    op()
                 glasses.show()
+                last_run = now
 
     # See "try" notes above regarding rare I2C errors.
     except OSError:
